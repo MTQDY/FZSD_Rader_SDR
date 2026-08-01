@@ -4,38 +4,69 @@ import numpy as np
 
 """工具函数 包含CRC校验与比特操作函数"""
 
-# ============================================================
-# CRC 校验（来自 protocol.py）
-# ============================================================
-def crc8_maxim(data: bytes, init: int = 0xFF) -> int:
-    """CRC-8/MAXIM: 多项式 0x8C (x^8+x^5+x^4+1), reflected"""
-    crc = init & 0xFF
-    for byte in data:
-        crc ^= byte
+
+'''CRC 校验（来自 protocol.py）'''
+
+# ---------------------------------------------------------------------------
+# CRC-8/MAXIM: 多项式 0x8C (x^8+x^5+x^4+1), reflected
+# ---------------------------------------------------------------------------
+_CRC8_POLY = 0x8C
+
+def _generate_crc8_table(poly: int) -> list[int]:
+    """动态生成 CRC-8 查找表（256 项）"""
+    table = [0] * 256
+    for i in range(256):
+        crc = i
         for _ in range(8):
             if crc & 0x01:
-                crc = ((crc >> 1) ^ 0x8C) & 0xFF
+                crc = ((crc >> 1) ^ poly) & 0xFF
             else:
                 crc = (crc >> 1) & 0xFF
+        table[i] = crc
+    return table
+
+_CRC8_TABLE = _generate_crc8_table(_CRC8_POLY)
+
+def crc8_maxim(data: bytes, init: int = 0xFF) -> int:
+    """CRC-8/MAXIM: 查表法"""
+    crc = init & 0xFF
+    for byte in data:
+        crc = _CRC8_TABLE[crc ^ byte]
     return crc
 
 
-def crc16_ibm(data: bytes, init: int = 0xFFFF) -> int:
-    """CRC-16/IBM: 多项式 0x8408 (x^16+x^15+x^2+1), reflected"""
-    crc = init & 0xFFFF
-    for byte in data:
-        crc ^= byte
+# ---------------------------------------------------------------------------
+# CRC-16/IBM: 多项式 0x8408 (x^16+x^15+x^2+1), reflected
+# ---------------------------------------------------------------------------
+_CRC16_POLY = 0x8408
+
+def _generate_crc16_table(poly: int) -> list[int]:
+    """动态生成 CRC-16 查找表（256 项）"""
+    table = [0] * 256
+    for i in range(256):
+        crc = i
         for _ in range(8):
             if crc & 0x0001:
-                crc = ((crc >> 1) ^ 0x8408) & 0xFFFF
+                crc = ((crc >> 1) ^ poly) & 0xFFFF
             else:
                 crc = (crc >> 1) & 0xFFFF
+        table[i] = crc
+    return table
+
+_CRC16_TABLE = _generate_crc16_table(_CRC16_POLY)
+
+def crc16_ibm(data: bytes, init: int = 0xFFFF) -> int:
+    """CRC-16/IBM: 查表法"""
+    crc = init & 0xFFFF
+    for byte in data:
+        crc = (crc >> 8) ^ _CRC16_TABLE[(crc ^ byte) & 0xFF]
     return crc
 
 
-# ============================================================
+# ---------------------------------------------------------------------------
 # 比特操作工具
-# ============================================================
+# ---------------------------------------------------------------------------
+
 def bits_to_u16(bits: np.ndarray) -> int:
     """将 numpy 位数组 (MSB first) 转为 uint16"""
     v = 0
