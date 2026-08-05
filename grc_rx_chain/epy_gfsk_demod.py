@@ -44,7 +44,7 @@ class GfskDemod(gr.hier_block2):
         sps         : 符号过采样倍数, 默认 47
         bt          : 高斯滤波器 BT 积, 默认 0.35
         sensitivity : GFSK 调制灵敏度, 默认 1.5628 (info) / 2.8194 (jam)
-        dc_block_len: DC 阻断器长度 (符号数), 默认 32
+        dc_block_len: DC 阻断器长度 (符号数), 默认 16
     """
 
     def __init__(
@@ -53,7 +53,7 @@ class GfskDemod(gr.hier_block2):
         sps: int = 47,
         bt: float = 0.35,
         sensitivity: float = 1.5628,
-        dc_block_len: int = 32,
+        dc_block_len: int = 16,
     ):
         """
         参数:
@@ -78,7 +78,7 @@ class GfskDemod(gr.hier_block2):
 
         # ----- 2. DC 阻断 -----
         # 等效 fm_demod() 中的 `- np.mean(inst_freq)`
-        # 使用长时 DC 阻断器, 长度 = dc_block_len 个符号对应的采样点
+        # 较短的时间常数 = 信号出现后更快适应 (8 符号 ≈ 0.4ms)
         self.dc_blocker = grfilter.dc_blocker_ff(int(dc_block_len * sps), True)
 
         # ----- 3. 幅度归一化 -----
@@ -93,12 +93,15 @@ class GfskDemod(gr.hier_block2):
 
         # ----- 5. 时钟恢复 (Mueller-Muller) -----
         # 从 sps 个采样点中恢复出 1 个符号
+        # gain_mu 控制相位跟踪速度, gain_omega 控制周期估计速度
+        # 增大 gain_mu/gain_omega = 更快锁定但稳态抖动更大
+        # omega_relative_limit = 允许的最大频率偏移
         self.clock_recovery = digital.clock_recovery_mm_ff(
             omega=float(sps),
-            gain_omega=0.25 * 0.175 * 0.175,
+            gain_omega=0.25 * 0.25 * 0.25,   # ~0.0156 (原来 0.0077, 加速 2×)
             mu=0.5,
-            gain_mu=0.175,
-            omega_relative_limit=0.005,
+            gain_mu=0.25,                     # 0.25 (原来 0.175)
+            omega_relative_limit=0.01,        # ±1% (原来 ±0.5%)
         )
 
         # ----- 6. 二值硬判决 -----
@@ -122,6 +125,18 @@ class GfskDemod(gr.hier_block2):
     def set_sps(self, sps: int) -> None:
         """动态更新过采样倍数"""
         self.clock_recovery.set_omega(float(sps))
+
+    def relock(self) -> None:
+        """短暂提高时钟恢复增益以快速重新锁定（在丢包过多时调用）"""
+        self.clock_recovery.set_gain_mu(0.40)
+        self.clock_recovery.set_gain_omega(0.25 * 0.40 * 0.40)
+        # 100ms 后恢复（由外部定时器触发）
+        # 这里只做"提升"，恢复由调用方通过 set_gains 处理
+
+    def set_gains_normal(self) -> None:
+        """恢复正常时钟恢复增益"""
+        self.clock_recovery.set_gain_mu(0.25)
+        self.clock_recovery.set_gain_omega(0.25 * 0.25 * 0.25)
 
 
 # ============================================================

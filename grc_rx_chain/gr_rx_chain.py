@@ -10,12 +10,7 @@ gr_rx_chain.py — GNU Radio 流式 RX 主链 (top_block)
                                                       ↓
                                           应用层回调 (launcher)
 
-与 CombatRadarSdr2026 的对应关系:
-  jam_rx_app.py main() 中的:
-    iq = rx.rx()                                         → soapy.source
-    inst = fm_demod(iq, sample_rate)                     → GfskDemod (前半)
-    cand = slice_packet_candidates(inst, sps, bt, ...)   → GfskDemod (后半) + ProtocolParserBlock
-    air packet processing                                → ApplicationHandler (launcher)
+                               → ApplicationHandler (launcher)
 """
 
 from __future__ import annotations
@@ -152,6 +147,14 @@ class RxChain(gr.top_block):
         self.set_rf_bandwidth(rf_bandwidth)
         self.set_sensitivity(sensitivity)
 
+    def clock_relock(self) -> None:
+        """时钟恢复快速重锁 (丢包过多时调用)"""
+        self.gfsk_demod.relock()
+
+    def clock_gains_normal(self) -> None:
+        """时钟恢复恢复正常增益"""
+        self.gfsk_demod.set_gains_normal()
+
 
     # 统计信息
     @property
@@ -166,7 +169,7 @@ class RxChain(gr.top_block):
 
 
 
-# 便捷工厂函数
+# 创建链
 def create_jam_rx_chain(
     rx_ip: str = "192.168.2.1",
     center_freq: float = 432_200_000.0,
