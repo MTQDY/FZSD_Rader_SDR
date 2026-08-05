@@ -3,24 +3,21 @@
 """
 gr_rx_launcher.py — GNU Radio 流式 RX 启动器
 
-保持与 CombatRadarSdr2026/apps/jam_rx_app.py 完全兼容的:
-  - 命令行参数 (--rx-ip, --team, --initial-level, --sps, --bt, ...)
-  - JSON 输出格式 ({"kind": "jam_frame", ...}, {"kind": "info_frame", ...})
-  - 服务器通信协议 (RadarServerComm)
-  - 录波功能 (WaveRecorder)
-
 核心差异: 信号处理链 (FM解调→GFSK解调→接入码检测) 由 GNU Radio 流式 block 完成,
 应用层逻辑 (置信度评分、协议帧重组、端序检测、服务器通信) 保持不变。
 
 用法:
-  python3 -m FZSD_RX_SDR.gr_rx_launcher --team red --initial-level 1
-  python3 -m FZSD_RX_SDR.gr_rx_launcher --team red --parse-policy info_only
+  直接去GUI启动最快。
+  使用时需要安装虚拟环境！
+  source /你的文件前路径/FZSD_RX_SDR/.venv/bin/activate
+  pip install numpy pyadi-iio pylibiio
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
 import select
 import string
 import sys
@@ -280,8 +277,9 @@ class ApplicationHandler:
             args.parse_policy == "onekey_then_info" and args.initial_level >= 2
         )
 
-        # 录波状态
-        self.wave_recorder: WaveRecorder | None = None
+        # 自动重启: 5 秒无包时触发
+        self.last_packet_time: float = time.time()
+        self.restart_count: int = 0
 
     # ---- 空中包回调入口 ----
     def on_packets(self, packets: list[dict], ts: float) -> None:
@@ -291,6 +289,17 @@ class ApplicationHandler:
         ts:      时间戳
         """
         now = ts if ts > 0 else time.time()
+        self.last_packet_time = now  # 收到包就刷新时间戳（无论是否有效）
+
+        # 诊断: 输出每次回调的包检测统计
+        if not self.args.quiet and packets:
+            jam_n = sum(1 for p in packets if p["kind"] == "JAM")
+            info_n = sum(1 for p in packets if p["kind"] == "INFO")
+            valid_n = sum(1 for p in packets if p["valid"])
+            best_dist = min((p.get("best_info_dist", 64) for p in packets), default=64)
+            emit_json({"kind": "diag_packets", "ts": now, "total": len(packets),
+                       "jam": jam_n, "info": info_n, "valid": valid_n,
+                       "best_access_dist": best_dist, "mode": self.state.rx_mode})
 
         if self.state.rx_mode == RX_MODE_JAM:
             self._handle_jam_packets(packets, now)
@@ -687,26 +696,28 @@ def main() -> int:
             wave_recorder = None
 
     # ---- GNU Radio 流式链 ----
-    # (先创建 handler, 再创建 chain 绑定回调)
-    handler = ApplicationHandler(state, args, server_comm, None)  # rx_chain 稍后注入
+    handler = ApplicationHandler(state, args, server_comm, None)
     if server_comm is not None:
         server_comm.on_jam_level_change = handler.on_jam_level_change
 
-    rx_chain = RxChain(
-        rx_ip=args.rx_ip,
-        center_freq=state.center_freq,
-        sample_rate=args.sample_rate,
-        rf_bandwidth=state.rf_bandwidth,
-        rx_gain_db=args.rx_gain_db,
-        sps=args.sps,
-        bt=args.bt,
-        sensitivity=state.sensitivity,
-        max_access_bit_errors=args.access_bit_errors,
-        allow_jam=(rx_mode == RX_MODE_JAM),
-        info_only=(rx_mode == RX_MODE_INFO),
-        on_packets=handler.on_packets,
-    )
-    # 回注 rx_chain 到 handler (用于级别切换时重配置)
+    def _build_rx_chain():
+        """创建 RxChain, 使用当前 state 中的参数"""
+        return RxChain(
+            rx_ip=args.rx_ip,
+            center_freq=state.center_freq,
+            sample_rate=args.sample_rate,
+            rf_bandwidth=state.rf_bandwidth,
+            rx_gain_db=args.rx_gain_db,
+            sps=args.sps,
+            bt=args.bt,
+            sensitivity=state.sensitivity,
+            max_access_bit_errors=args.access_bit_errors,
+            allow_jam=(state.rx_mode == RX_MODE_JAM),
+            info_only=(state.rx_mode == RX_MODE_INFO),
+            on_packets=handler.on_packets,
+        )
+
+    rx_chain = _build_rx_chain()
     handler.rx_chain = rx_chain
 
     # ---- 启动 ----
@@ -729,8 +740,8 @@ def main() -> int:
     try:
         rx_chain.start()
 
-        # 主循环: 检查级别切换、键盘输入、状态上报、保持存活
-        print("按 1/2/3 模拟干扰等级切换, 按 q 退出", flush=True)
+        # 主循环: 检查级别切换、键盘输入、状态上报、自动重启、保持存活
+        print("按 1/2/3 模拟干扰等级切换, 按 q 退出。5秒无包自动重启流图。", flush=True)
         while True:
             now = time.time()
 
@@ -746,13 +757,44 @@ def main() -> int:
             if handler.pending_level != state.level:
                 handler.apply_pending_level_change()
 
-            # 定时状态上报 (补上原来 jam_rx_app.py 主循环的 to_status)
+            # 定时状态上报
             if handler.last_status_emit == 0 or now - handler.last_status_emit >= args.status_interval:
                 handler.last_status_emit = now
                 emit_json(state.to_status(
                     args.rx_ip,
                     server_connected=bool(server_comm and server_comm.connected),
                 ))
+
+            # 自动重启: 5 秒无空中包 → execv 原地重启进程
+            if now - handler.last_packet_time > 5.0:
+                handler.restart_count += 1
+                if not args.quiet:
+                    emit_error("auto-restart process (execv)",
+                               restart_count=handler.restart_count,
+                               idle_seconds=round(now - handler.last_packet_time, 1))
+                emit_json({"kind": "process_restarting", "ts": now,
+                           "restart_count": handler.restart_count})
+                sys.stdout.flush()
+                # 重建命令行: 保持当前 profile 参数, 用 -m 运行
+                new_argv = [
+                    sys.executable, "-u", "-m", "FZSD_RX_SDR.gr_rx_launcher",
+                    "--rx-ip", args.rx_ip,
+                    "--team", state.team,
+                    "--initial-level", str(state.level),
+                    "--sample-rate", str(args.sample_rate),
+                    "--sps", str(args.sps),
+                    "--bt", str(args.bt),
+                    "--rx-gain-db", str(args.rx_gain_db),
+                    "--access-bit-errors", str(args.access_bit_errors),
+                    "--confidence-threshold", str(args.confidence_threshold),
+                    "--parse-policy", args.parse_policy,
+                    "--payload-endian", args.payload_endian,
+                ]
+                if args.no_server_comm:
+                    new_argv.append("--no-server-comm")
+                if args.quiet:
+                    new_argv.append("--quiet")
+                os.execv(sys.executable, new_argv)
 
             time.sleep(0.05)
 
