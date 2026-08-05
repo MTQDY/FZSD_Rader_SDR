@@ -1,9 +1,7 @@
 """
-TCP Server Communication Module for RM2026 Radar System
+服务器通信部分
 
-Handles bidirectional communication with the radar main program server:
-- Receives jam level control packets (interference level 1-3)
-- Sends radar wireless link protocol frames (0x0A01-0x0A06)
+负责接收服务器下传的干扰波等级控制字；上传信息波解码信息。
 """
 
 from __future__ import annotations
