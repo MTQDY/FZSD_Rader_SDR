@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-RoboMaster 无线电接收系统 GUI (PyQt5 版本)
+RoboMaster 无线电接收系统 GUI
 本GUI解析一、二级干扰波后转为解析信息波。
-功能与 gui_launcher.py 完全一致，GUI 层使用 PyQt5。
 """
 
 from __future__ import annotations
