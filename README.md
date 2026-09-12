@@ -5,8 +5,8 @@ FZSD雷达无线电接收链路 V1.0 堂堂登场。
 本项目前半部分使用的是基于GRC的完全不同于开源的接收前端，而后半部分则是对开源的解码算法过程进行了前端适配与应用层的优化，说难听点就是直接挪过来了。  
 毕竟本人本质硬件红丸，也不要对本人的算法能力有过多期待。  
   
-  接收器的启动方式是启动/home/yangyushuang/FZSD_RX_SDR/apps/gui_launcher_qt.py。或者如果你比较极客，可以考虑启动gr_rx_launcher.py。至于需不需要启用env虚拟环境——建议都试试，不用多麻烦一步最好。  
-  （第二版说明）用法:
+  接收器的启动方式是启动FZSD_RX_SDR/apps/gui_launcher_qt.py。或者如果你比较极客，可以考虑启动gr_rx_launcher.py。至于需不需要启用env虚拟环境——建议都试试，不用多麻烦一步最好。  
+  （第二版说明）用法:  
   **使用时需要安装虚拟环境！**  
   source /你的文件前路径/FZSD_RX_SDR/.venv/bin/activate  
   pip install numpy pyadi-iio pylibiio  
