@@ -6,6 +6,10 @@ FZSD雷达无线电接收链路 V1.0 堂堂登场。
 毕竟本人本质硬件红丸，也不要对本人的算法能力有过多期待。  
   
   接收器的启动方式是启动/home/yangyushuang/FZSD_RX_SDR/apps/gui_launcher_qt.py。或者如果你比较极客，可以考虑启动gr_rx_launcher.py。至于需不需要启用env虚拟环境——建议都试试，不用多麻烦一步最好。  
+  （第二版说明）用法:
+  **使用时需要安装虚拟环境！**  
+  source /你的文件前路径/FZSD_RX_SDR/.venv/bin/activate  
+  pip install numpy pyadi-iio pylibiio  
   
   先上实战效果：  
   <img width="1920" height="1079" alt="截图 2026-08-02 21-32-08" src="https://github.com/user-attachments/assets/e7dbe471-66cc-41a0-8005-aba57180fa6e" />  
