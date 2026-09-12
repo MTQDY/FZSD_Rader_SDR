@@ -29,20 +29,21 @@ VENV_DIR = PROJECT_ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / "bin" / "python3"
 
 # ---------------------------------------------------------------------------
-# Profile 预设（来自 radio_profiles.py，避免跨项目依赖）
+# Profile 预设（tx_chain 独立维护，与 tx_chain/radio_profiles.py 对应）
+#   tx_power_dbm: 目标物理输出功率 (dBm)，换算硬件衰减见 radio_profiles.dbm_to_atten_db
 # ---------------------------------------------------------------------------
 JAM_PROFILES: dict[str, dict] = {
-    "red1":  {"center_freq": 432200000, "rf_bandwidth": 940000, "sensitivity": 2.8323, "tx_gain_db": -20.0},
-    "red2":  {"center_freq": 432500000, "rf_bandwidth": 860000, "sensitivity": 2.5809, "tx_gain_db": -20.0},
-    "red3":  {"center_freq": 432800000, "rf_bandwidth": 250000, "sensitivity": 0.6646, "tx_gain_db": -20.0},
-    "blue1": {"center_freq": 434920000, "rf_bandwidth": 940000, "sensitivity": 2.8323, "tx_gain_db": -20.0},
-    "blue2": {"center_freq": 434620000, "rf_bandwidth": 860000, "sensitivity": 2.5809, "tx_gain_db": -20.0},
-    "blue3": {"center_freq": 434320000, "rf_bandwidth": 250000, "sensitivity": 0.6646, "tx_gain_db": -20.0},
+    "red1":  {"center_freq": 432200000, "rf_bandwidth": 940000, "sensitivity": 2.8323, "tx_power_dbm": -10.0},
+    "red2":  {"center_freq": 432500000, "rf_bandwidth": 860000, "sensitivity": 2.5809, "tx_power_dbm": -10.0},
+    "red3":  {"center_freq": 432800000, "rf_bandwidth": 250000, "sensitivity": 0.6646, "tx_power_dbm": -10.0},
+    "blue1": {"center_freq": 434920000, "rf_bandwidth": 940000, "sensitivity": 2.8323, "tx_power_dbm": -10.0},
+    "blue2": {"center_freq": 434620000, "rf_bandwidth": 860000, "sensitivity": 2.5809, "tx_power_dbm": -10.0},
+    "blue3": {"center_freq": 434320000, "rf_bandwidth": 250000, "sensitivity": 0.6646, "tx_power_dbm": -10.0},
 }
 
 INFO_PROFILES: dict[str, dict] = {
-    "red1":  {"center_freq": 433200000, "rf_bandwidth": 540000, "sensitivity": 1.5756, "tx_gain_db": -25.0},
-    "blue1": {"center_freq": 433920000, "rf_bandwidth": 540000, "sensitivity": 1.5756, "tx_gain_db": -25.0},
+    "red1":  {"center_freq": 433200000, "rf_bandwidth": 540000, "sensitivity": 1.5756, "tx_power_dbm": -60.0},
+    "blue1": {"center_freq": 433920000, "rf_bandwidth": 540000, "sensitivity": 1.5756, "tx_power_dbm": -60.0},
 }
 
 # Profile → 所属模式
@@ -175,9 +176,9 @@ class TxLauncherGUI(QtWidgets.QWidget):
         self.sensitivity_edit = QtWidgets.QLineEdit("2.8323")
         sdr_grid.addWidget(self.sensitivity_edit, 2, 1)
 
-        sdr_grid.addWidget(QtWidgets.QLabel("TX 增益 (dB):"), 2, 2)
-        self.tx_gain_edit = QtWidgets.QLineEdit("-20.0")
-        sdr_grid.addWidget(self.tx_gain_edit, 2, 3)
+        sdr_grid.addWidget(QtWidgets.QLabel("发射功率 (dBm):"), 2, 2)
+        self.tx_power_edit = QtWidgets.QLineEdit("-10.0")
+        sdr_grid.addWidget(self.tx_power_edit, 2, 3)
 
         main_layout.addWidget(sdr_group)
 
@@ -197,8 +198,8 @@ class TxLauncherGUI(QtWidgets.QWidget):
         self.bt_edit = QtWidgets.QLineEdit("0.35")
         common_grid.addWidget(self.bt_edit, 1, 1)
 
-        common_grid.addWidget(QtWidgets.QLabel("幅度:"), 1, 2)
-        self.amplitude_edit = QtWidgets.QLineEdit("0.8")
+        common_grid.addWidget(QtWidgets.QLabel("数字幅度 (0~1):"), 1, 2)
+        self.amplitude_edit = QtWidgets.QLineEdit("1.0")
         common_grid.addWidget(self.amplitude_edit, 1, 3)
 
         common_grid.addWidget(QtWidgets.QLabel("更新频率 (Hz):"), 2, 0)
@@ -291,7 +292,7 @@ class TxLauncherGUI(QtWidgets.QWidget):
         self.center_freq_edit.setText(str(preset["center_freq"]))
         self.rf_bandwidth_edit.setText(str(preset["rf_bandwidth"]))
         self.sensitivity_edit.setText(str(preset["sensitivity"]))
-        self.tx_gain_edit.setText(str(preset["tx_gain_db"]))
+        self.tx_power_edit.setText(str(preset["tx_power_dbm"]))
 
     # ==================================================================
     # 虚拟环境自动准备
@@ -433,7 +434,7 @@ class TxLauncherGUI(QtWidgets.QWidget):
             "--bt", self.bt_edit.text().strip(),
             "--sensitivity", self.sensitivity_edit.text().strip(),
             "--rf-bandwidth", self.rf_bandwidth_edit.text().strip(),
-            "--tx-gain-db", self.tx_gain_edit.text().strip(),
+            "--tx-power-dbm", self.tx_power_edit.text().strip(),
             "--amplitude", self.amplitude_edit.text().strip(),
             "--update-hz", self.update_hz_edit.text().strip(),
             "--packets-per-buffer", self.packets_per_buffer_edit.text().strip(),

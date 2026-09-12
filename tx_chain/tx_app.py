@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import signal
 import sys
 import time
@@ -16,7 +17,7 @@ except ImportError:
 from phy import packet_to_iq
 from protocol import INFO_ACCESS_CODE, CMD_0A01, CMD_0A02, CMD_0A03, CMD_0A04, CMD_0A05, build_air_packet, build_referee_frame
 from message_value_generate import MessageValueGenerator
-from radio_profiles import INFO_PROFILE_CHOICES, INFO_PROFILES
+from radio_profiles import INFO_PROFILE_CHOICES, INFO_PROFILES, resolve_atten_db
 
 RUNNING = True
 
@@ -90,8 +91,8 @@ def main() -> int:
     parser.add_argument("--bt", type=float, default=0.35)
     parser.add_argument("--sensitivity", type=float, default=1.5728)
     parser.add_argument("--rf-bandwidth", type=int, default=540_000)
-    parser.add_argument("--tx-gain-db", type=float, default=-25.0)
-    parser.add_argument("--amplitude", type=float, default=0.8)
+    parser.add_argument("--tx-power-dbm", type=float, default=-60.0)
+    parser.add_argument("--amplitude", type=float, default=1.0)
     parser.add_argument("--packets-per-buffer", type=int, default=24)
     parser.add_argument("--update-hz", type=float, default=10.0)
     args = parser.parse_args()
@@ -104,8 +105,8 @@ def main() -> int:
             args.rf_bandwidth = preset.rf_bandwidth
         if args.sensitivity == parser.get_default("sensitivity"):
             args.sensitivity = preset.sensitivity
-        if args.tx_gain_db == parser.get_default("tx_gain_db"):
-            args.tx_gain_db = preset.tx_gain_db
+        if args.tx_power_dbm == parser.get_default("tx_power_dbm"):
+            args.tx_power_dbm = preset.tx_power_dbm
 
     if args.sps <= 0 or args.sample_rate <= 0 or args.update_hz <= 0:
         print("ERROR: invalid numeric parameters")
@@ -114,6 +115,8 @@ def main() -> int:
     bit_rate = args.sample_rate / args.sps
     packet_period_s = ((8 + 4 + 15) * 8) / bit_rate
     source = InfoWaveSource(update_hz=args.update_hz, packet_period_s=packet_period_s)
+
+    atten_db = resolve_atten_db(args.tx_power_dbm, args.amplitude)
 
     signal.signal(signal.SIGINT, on_sigint)
 
@@ -129,7 +132,8 @@ def main() -> int:
     print(f"BT             : {args.bt}")
     print(f"Sensitivity    : {args.sensitivity} rad/sample")
     print(f"RF Bandwidth   : {args.rf_bandwidth} Hz")
-    print(f"TX Gain        : {args.tx_gain_db} dB")
+    print(f"TX Power       : {args.tx_power_dbm} dBm (硬件衰减 {atten_db:.2f} dB)")
+    print(f"Digital Level  : {20.0 * math.log10(args.amplitude):.2f} dBFS (amplitude={args.amplitude})")
     print(f"Access Code    : 0x{INFO_ACCESS_CODE:016X}")
     print(f"Update Rate    : {args.update_hz:.2f} Hz")
     print("Source Stream  : cmd 0x0A01 -> 0x0A05")
@@ -140,7 +144,7 @@ def main() -> int:
         tx.sample_rate = int(args.sample_rate)
         tx.tx_lo = int(args.center_freq)
         tx.tx_rf_bandwidth = int(args.rf_bandwidth)
-        tx.tx_hardwaregain = float(args.tx_gain_db)
+        tx.tx_hardwaregain_chan0 = float(atten_db)
         tx.tx_enabled_channels = [0]
         tx.tx_cyclic_buffer = False
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import random
 import signal
 import string
@@ -18,7 +19,7 @@ except ImportError:
 
 from phy import packet_to_iq
 from protocol import JAM_ACCESS_CODE, CMD_0A06, build_air_packet, build_referee_frame
-from radio_profiles import JAM_PROFILES, PROFILE_CHOICES
+from radio_profiles import JAM_PROFILES, PROFILE_CHOICES, resolve_atten_db
 
 RUNNING = True
 
@@ -112,8 +113,8 @@ def main() -> int:
     parser.add_argument("--bt", type=float, default=0.35)
     parser.add_argument("--sensitivity", type=float, default=2.8194)
     parser.add_argument("--rf-bandwidth", type=int, default=940_000)
-    parser.add_argument("--tx-gain-db", type=float, default=-20.0)
-    parser.add_argument("--amplitude", type=float, default=0.8)
+    parser.add_argument("--tx-power-dbm", type=float, default=-10.0)
+    parser.add_argument("--amplitude", type=float, default=1.0)
     parser.add_argument("--update-hz", type=float, default=10.0)
     parser.add_argument("--push-rate", type=int, default=1350)
     parser.add_argument("--key", default="")
@@ -129,8 +130,10 @@ def main() -> int:
             args.rf_bandwidth = preset.rf_bandwidth
         if args.sensitivity == parser.get_default("sensitivity"):
             args.sensitivity = preset.sensitivity
-        if args.tx_gain_db == parser.get_default("tx_gain_db"):
-            args.tx_gain_db = preset.tx_gain_db
+        if args.tx_power_dbm == parser.get_default("tx_power_dbm"):
+            args.tx_power_dbm = preset.tx_power_dbm
+
+    atten_db = resolve_atten_db(args.tx_power_dbm, args.amplitude)
 
     rng = random.Random(int(time()))
     key = args.key.strip().upper() if args.key else random_key6(rng)
@@ -157,7 +160,8 @@ def main() -> int:
     print(f"BT             : {args.bt}")
     print(f"Sensitivity    : {args.sensitivity} rad/sample")
     print(f"RF Bandwidth   : {args.rf_bandwidth} Hz")
-    print(f"TX Gain        : {args.tx_gain_db} dB")
+    print(f"TX Power       : {args.tx_power_dbm} dBm (硬件衰减 {atten_db:.2f} dB)")
+    print(f"Digital Level  : {20.0 * math.log10(args.amplitude):.2f} dBFS (amplitude={args.amplitude})")
     print(f"Access Code    : 0x{JAM_ACCESS_CODE:016X}")
     print(f"Update Rate    : {args.update_hz:.2f} Hz")
     print(f"Push Rate      : {args.push_rate} byte/s")
@@ -170,7 +174,7 @@ def main() -> int:
         tx.sample_rate = int(args.sample_rate)
         tx.tx_lo = int(args.center_freq)
         tx.tx_rf_bandwidth = int(args.rf_bandwidth)
-        tx.tx_hardwaregain = float(args.tx_gain_db)
+        tx.tx_hardwaregain_chan0 = float(atten_db)
         tx.tx_enabled_channels = [0]
         tx.tx_cyclic_buffer = False
 
