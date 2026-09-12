@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """
-RoboMaster 无线电接收系统 GUI
+RoboMaster 无线电接收系统 GUI (PyQt5 版本)
 本GUI解析一、二级干扰波后转为解析信息波。
+功能与 gui_launcher.py 完全一致，GUI 层使用 PyQt5。
 """
+###python3 /home/yangyushuang/FZSD_RX_SDR/apps/mock_radar_server.py
 
 from __future__ import annotations
 
@@ -230,20 +232,20 @@ class JamRxGUI(QtWidgets.QWidget):
         # 干扰波密钥
         status_grid.addWidget(QtWidgets.QLabel("干扰波密钥:"), row, 0)
         self.jam_key_label = QtWidgets.QLabel("N/A")
-        self.jam_key_label.setStyleSheet("color: #ff8c00; font-size: 16px; font-family: monospace;")
+        self.jam_key_label.setStyleSheet("color: #ff8c00; font-size: 16px;")
         status_grid.addWidget(self.jam_key_label, row, 1)
 
         # 干扰等级
         status_grid.addWidget(QtWidgets.QLabel("干扰等级:"), row, 2)
         self.jam_level_label = QtWidgets.QLabel("N/A")
-        self.jam_level_label.setStyleSheet("color: gray; font-size: 16px; font-weight: bold;")
+        self.jam_level_label.setStyleSheet("color: gray; font-size: 16px; ")
         status_grid.addWidget(self.jam_level_label, row, 3)
 
         row = 1
         # 接收模式
         status_grid.addWidget(QtWidgets.QLabel("接收模式:"), row, 0)
         self.rx_mode_label = QtWidgets.QLabel("N/A")
-        self.rx_mode_label.setStyleSheet("color: #ff8c00; font-size: 16px; font-weight: bold;")
+        self.rx_mode_label.setStyleSheet("color: #ff8c00; font-size: 16px; ")
         status_grid.addWidget(self.rx_mode_label, row, 1)
 
         # 干扰波帧数
@@ -646,6 +648,25 @@ class JamRxGUI(QtWidgets.QWidget):
                     message = f"{message}: {detail}"
             tag = "warn" if "no jam packets" in message else "error"
             self._log(message, tag)
+        elif kind == "diag_packets":
+            # 诊断: 接入码匹配质量
+            self._log(
+                f"DIAG total={data.get('total')} jam={data.get('jam')} info={data.get('info')} "
+                f"valid={data.get('valid')} dist0={data.get('dist_0')} "
+                f"dist1={data.get('dist_1')} dist2+={data.get('dist_ge2')}",
+                "info",
+                show=self.show_realtime,
+            )
+        elif kind == "diag_info_chain":
+            # 诊断: 信息波重组流水线各环节
+            self._log(
+                f"DIAG air={data.get('air_total')}→append={data.get('air_appended')} "
+                f"drop={data.get('air_dropped')} frames={data.get('frames_extracted')} "
+                f"crc8fail={data.get('diag_crc8_fail')} incompl={data.get('diag_incomplete')} "
+                f"crc16fail={data.get('diag_crc16_fail')}",
+                "info",
+                show=self.show_realtime,
+            )
         elif kind == "jam_stopped":
             self._log("接收进程已退出", "info")
             record_path = data.get("record_path")
