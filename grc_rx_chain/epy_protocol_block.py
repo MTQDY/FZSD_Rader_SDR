@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
 """
 gr_protocol_block.py — GNU Radio 流式协议解析 Block
 
@@ -47,7 +45,7 @@ class ProtocolParserBlock(gr.basic_block):
 
     def __init__(
         self,
-        max_access_bit_errors: int = 1,
+        max_access_bit_errors: int = 2,
         allow_jam: bool = True,
         info_only: bool = False,
         on_packets: Callable[[list[dict], float], None] | None = None,
@@ -56,7 +54,7 @@ class ProtocolParserBlock(gr.basic_block):
             self,
             name="ProtocolParserBlock",
             in_sig=[np.uint8],
-            out_sig=None,  # 用 message port 输出
+            out_sig=None, 
         )
 
         self.max_access_bit_errors = max_access_bit_errors

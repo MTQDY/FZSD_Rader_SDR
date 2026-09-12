@@ -22,6 +22,16 @@ from gnuradio import soapy
 
 from .epy_gfsk_demod import GfskDemod
 from .epy_protocol_block import ProtocolParserBlock
+from .epy_power_probe import PowerProbe
+
+# PlutoSDR (AD9361) RX 硬件增益范围
+RX_GAIN_MIN_DB = 0.0
+RX_GAIN_MAX_DB = 73.0
+
+
+def clamp_rx_gain(gain_db: float) -> float:
+    """把接收增益限制在硬件支持范围内。"""
+    return min(max(float(gain_db), RX_GAIN_MIN_DB), RX_GAIN_MAX_DB)
 
 
 class RxChain(gr.top_block):
@@ -49,11 +59,11 @@ class RxChain(gr.top_block):
         center_freq: float = 433_200_000.0,
         sample_rate: float = 1_000_000.0,
         rf_bandwidth: float = 540_000.0,
-        rx_gain_db: float = 50.0,
+        rx_gain_db: float = 60.0,
         sps: int = 47,
         bt: float = 0.35,
         sensitivity: float = 1.5628,
-        max_access_bit_errors: int = 1,
+        max_access_bit_errors: int = 2,
         allow_jam: bool = True,
         info_only: bool = False,
         on_packets: Callable[[list[dict], float], None] | None = None,
@@ -85,7 +95,7 @@ class RxChain(gr.top_block):
         self.source.set_bandwidth(0, rf_bandwidth)
         self.source.set_frequency(0, center_freq)
         self.source.set_gain_mode(0, False)  # manual gain
-        self.source.set_gain(0, min(max(rx_gain_db, 0.0), 73.0))
+        self.source.set_gain(0, clamp_rx_gain(rx_gain_db))
 
         # ----- 2. GFSK 解调器 -----
         self.gfsk_demod = GfskDemod(
@@ -103,9 +113,13 @@ class RxChain(gr.top_block):
             on_packets=on_packets,
         )
 
+        # ----- 4. IQ 功率探针 (监测接收信号强度) -----
+        self.power_probe = PowerProbe(alpha=1e-4)
+
         # ----- 连接流图 -----
         self.connect(self.source, self.gfsk_demod)
         self.connect(self.gfsk_demod, self.protocol_parser)
+        self.connect(self.source, self.power_probe)
 
 
     # 运行时参数更新 (对应 jam_rx_app.py 中的 configure_receiver 逻辑)
@@ -118,6 +132,16 @@ class RxChain(gr.top_block):
         """切换 RF 带宽"""
         self._rf_bandwidth = bw_hz
         self.source.set_bandwidth(0, bw_hz)
+
+    def set_rx_gain(self, gain_db: float) -> None:
+        """切换接收增益 (dB, 手动增益模式)。
+
+        注意: 解调链首级 quadrature_demod_cf 取的是复数幅角 (幅度无关),
+        且后续归一化系数固定, 因此改增益不需要重新标定 sensitivity。
+        """
+        clamped = clamp_rx_gain(gain_db)
+        self._rx_gain_db = clamped
+        self.source.set_gain(0, clamped)
 
     def set_sensitivity(self, sensitivity: float) -> None:
         """更新调制灵敏度 (不同 profile 切换时调用)"""
@@ -141,10 +165,16 @@ class RxChain(gr.top_block):
         center_freq: float,
         rf_bandwidth: float,
         sensitivity: float,
+        rx_gain_db: float | None = None,
     ) -> None:
-        """一键切换射频配置 (对应 jam_rx_app.py 切换 profile 时的操作)"""
+        """一键切换射频配置 (对应 jam_rx_app.py 切换 profile 时的操作)
+
+        rx_gain_db 为 None 时保持当前增益不变 (兼容旧调用)。
+        """
         self.set_center_freq(center_freq)
         self.set_rf_bandwidth(rf_bandwidth)
+        if rx_gain_db is not None:
+            self.set_rx_gain(rx_gain_db)
         self.set_sensitivity(sensitivity)
 
     def clock_relock(self) -> None:
@@ -154,6 +184,10 @@ class RxChain(gr.top_block):
     def clock_gains_normal(self) -> None:
         """时钟恢复恢复正常增益"""
         self.gfsk_demod.set_gains_normal()
+
+    def get_power_dbfs(self) -> float:
+        """读取当前接收信号的功率 (dBFS)"""
+        return self.power_probe.level()
 
 
     # 统计信息
